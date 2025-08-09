@@ -1,32 +1,17 @@
 import os
 import json
+import argparse
 import arxiv
 import google.generativeai as genai
 import openai
 from datetime import datetime, timedelta, timezone
 
-# --- 配置 ---
-# 1. LLM 提供商: 'google' 或 'openai'
-LLM_PROVIDER = "google"  # <--- 在这里切换
+# --- 语言和模板配置 (Language & Template Configuration) ---
 
-# 2. API 密钥 (从环境变量读取)
-#    运行: export GOOGLE_API_KEY='你的Google API密钥'
-#    运行: export OPENAI_API_KEY='你的OpenAI API密钥'
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# 3. Arxiv 搜索配置, Computation and Language (cs.CL); Artificial Intelligence (cs.AI); Machine Learning (cs.LG)
-SEARCH_QUERY = 'cat:cs.CL OR cat:cs.AI OR cat:cs.LG'
-MAX_RESULTS = 20  # 每天处理的最大论文数
-
-# 4. LLM 分析配置
-# 为不同提供商选择合适的模型
-MODEL_CONFIG = {
-    "google": "gemini-2.5-flash",
-    "openai": "gpt-5-2025-08-07"
-}
-
-PROMPT_TEMPLATE = """
+PROMPTS = {
+    "en": {
+        "system_message": "You are a helpful research assistant providing JSON output.",
+        "template": """
 You are a senior AI researcher specializing in Large Language Models.
 Based on the title and abstract of the following paper, please perform these tasks:
 
@@ -42,70 +27,121 @@ Based on the title and abstract of the following paper, please perform these tas
 Provide your response in a valid JSON format, like this:
 {{"category": "...", "contribution": "...", "novelty": ...}}
 """
+    },
+    "zh": {
+        "system_message": "你是一个乐于助人的研究助理，需提供 JSON 格式的输出。",
+        "template": """
+你是一位专攻大型语言模型的高级AI研究员。
+根据以下论文的标题和摘要，请完成以下任务：
 
-# 5. 输出文件
-OUTPUT_FILE = "daily_arxiv_digest.md"
-OUTPUT_DIR = "arxiv_digests_md"
+**论文标题:** {title}
+**论文摘要:** {abstract}
 
-# --- 核心功能 ---
+**任务:**
+1.  **分类**: 将论文归入以下类别之一：
+    [模型架构, 训练与优化, 数据与预训练, 微调与适配, 评测与基准, 多模态, 应用, 安全与伦理, 理论与分析, 其他]。
+2.  **总结核心贡献**: 用一个简洁的句子总结论文的核心贡献。
+3.  **评定新颖性**: 在1到5的范围内评价其潜在新颖性 (1=微创新, 3=有趣, 5=潜在突破)。
 
-def fetch_recent_papers():
-    """从 Arxiv 获取过去24小时的论文"""
-    print("Fetching recent papers from arXiv...")
-    # BUGFIX: 使用带时区的 UTC 时间进行比较
-    yesterday_utc = datetime.now(timezone.utc) - timedelta(days=1)
+请以有效的JSON格式提供您的回答，例如：
+{{"category": "...", "contribution": "...", "novelty": ...}}
+"""
+    }
+}
+
+REPORT_TEMPLATES = {
+    "en": {
+        "title": "# Daily arXiv LLM Digest - {report_date}",
+        "summary_by": "Your daily summary of new papers on LLMs, analyzed by **{provider}**.",
+        "top_recommendation": "## 🔥 Today's Top Recommendation",
+        "authors": "- **Authors**: {authors}",
+        "category": "- **Category**: `{category}`",
+        "novelty_score": "- **Novelty Score**: `{novelty}/5`",
+        "contribution": "- **Contribution**: {contribution}",
+        "abstract": "**Abstract**: *{abstract}*",
+        "other_papers": """---
+
+## 📚 Other Papers Today""",
+        "other_paper_category": "- **Category**: `{category}` | **Novelty**: `{novelty}/5`",
+        "no_papers_found": "# Daily arXiv LLM Digest\n\nNo new papers found today."
+    },
+    "zh": {
+        "title": "# arXiv LLM 每日摘要 - {report_date}",
+        "summary_by": "您的 LLM 论文每日摘要，由 **{provider}** 分析。",
+        "top_recommendation": "## 🔥 今日最佳推荐",
+        "authors": "- **作者**: {authors}",
+        "category": "- **类别**: `{category}`",
+        "novelty_score": "- **新颖性评分**: `{novelty}/5`",
+        "contribution": "- **核心贡献**: {contribution}",
+        "abstract": "**摘要**: *{abstract}*",
+        "other_papers": """---
+
+## 📚 今日其他论文""",
+        "other_paper_category": "- **类别**: `{category}` | **新颖性**: `{novelty}/5`",
+        "no_papers_found": "# arXiv LLM 每日摘要\n\n今日未发现新论文."
+    }
+}
+
+
+# --- 核心功能 (Core Functions) ---
+
+def fetch_recent_papers(search_query, max_results, days):
+    """从 Arxiv 获取过去指定天数的论文"""
+    print(f"Fetching recent papers from the last {days} day(s) from arXiv...")
+    start_date_utc = datetime.now(timezone.utc) - timedelta(days=days)
     
     search = arxiv.Search(
-        query=SEARCH_QUERY,
-        max_results=MAX_RESULTS,
+        query=search_query,
+        max_results=max_results,
         sort_by=arxiv.SortCriterion.SubmittedDate
     )
     
     recent_papers = []
     for result in search.results():
-        if result.published > yesterday_utc:
+        if result.published > start_date_utc:
             recent_papers.append(result)
             
-    print(f"Found {len(recent_papers)} new papers from the last 24 hours.")
+    print(f"Found {len(recent_papers)} new papers from the last {days} day(s).")
     return recent_papers
 
-def _analyze_with_google(model, paper):
+def _analyze_with_google(model, paper, lang):
     """使用 Google Gemini 分析论文"""
-    prompt = PROMPT_TEMPLATE.format(title=paper.title, abstract=paper.summary)
+    prompt = PROMPTS[lang]["template"].format(title=paper.title, abstract=paper.summary)
     response = model.generate_content(prompt)
-    # 清理并解析 LLM 可能返回的 markdown 代码块
     cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
     return json.loads(cleaned_response)
 
-def _analyze_with_openai(client, model_name, paper):
-    """使用 OpenAI GPT 分析论文"""
-    prompt = PROMPT_TEMPLATE.format(title=paper.title, abstract=paper.summary)
+def _analyze_with_openai_compatible(client, model_name, paper, lang):
+    """使用 OpenAI 兼容的 API (OpenAI, DeepSeek) 分析论文"""
+    prompt = PROMPTS[lang]["template"].format(title=paper.title, abstract=paper.summary)
+    system_message = PROMPTS[lang]["system_message"]
     response = client.chat.completions.create(
         model=model_name,
         messages=[
-            {"role": "system", "content": "You are a helpful research assistant providing JSON output."},
+            {"role": "system", "content": system_message},
             {"role": "user", "content": prompt}
         ],
-        response_format={"type": "json_object"} # 确保返回JSON
+        response_format={"type": "json_object"}
     )
     return json.loads(response.choices[0].message.content)
 
-def analyze_paper(provider, client, model_name, paper):
+def analyze_paper(provider, client, model_name, paper, lang):
     """根据提供商选择分析函数"""
     print(f"  Analyzing with {provider}: {paper.title[:60]}...")
     try:
         if provider == 'google':
-            return _analyze_with_google(client, paper)
-        elif provider == 'openai':
-            return _analyze_with_openai(client, model_name, paper)
+            return _analyze_with_google(client, paper, lang)
+        elif provider in ['openai', 'deepseek']:
+            return _analyze_with_openai_compatible(client, model_name, paper, lang)
     except Exception as e:
         print(f"    [!] Error analyzing paper: {e}")
         return None
 
-def generate_markdown_report(analyzed_papers):
+def generate_markdown_report(analyzed_papers, provider, lang):
     """生成 Markdown 格式的报告"""
+    template = REPORT_TEMPLATES[lang]
     if not analyzed_papers:
-        return "# Daily arXiv LLM Digest\n\nNo new papers found today."
+        return template["no_papers_found"]
 
     analyzed_papers.sort(key=lambda x: x['analysis'].get('novelty', 0), reverse=True)
     
@@ -113,68 +149,95 @@ def generate_markdown_report(analyzed_papers):
     other_papers = analyzed_papers[1:]
     
     report_date = datetime.now().strftime("%Y-%m-%d")
-    md_content = f"# Daily arXiv LLM Digest - {report_date}\n\n"
-    md_content += f"Your daily summary of new papers on LLMs, analyzed by **{LLM_PROVIDER}**.\n\n"
+    md_content = template["title"].format(report_date=report_date) + "\n\n"
+    md_content += template["summary_by"].format(provider=provider) + "\n\n"
     
-    md_content += "## 🔥 Today's Top Recommendation\n\n"
+    md_content += template["top_recommendation"] + "\n\n"
     p = recommendation['paper']
     a = recommendation['analysis']
     md_content += f"### [{p.title}]({p.entry_id})\n"
-    md_content += f"- **Authors**: {', '.join(author.name for author in p.authors)}\n"
-    md_content += f"- **Category**: `{a.get('category', 'N/A')}`\n"
-    md_content += f"- **Novelty Score**: `{a.get('novelty', 'N/A')}/5`\n"
-    md_content += f"- **Contribution**: {a.get('contribution', 'N/A')}\n\n"
-    # BUGFIX: 使用 '\n' 替换换行符，而不是字母 'n'
+    md_content += template["authors"].format(authors=', '.join(author.name for author in p.authors)) + "\n"
+    md_content += template["category"].format(category=a.get('category', 'N/A')) + "\n"
+    md_content += template["novelty_score"].format(novelty=a.get('novelty', 'N/A')) + "\n"
+    md_content += template["contribution"].format(contribution=a.get('contribution', 'N/A')) + "\n\n"
     clean_summary = p.summary.replace('\n', ' ')
-    md_content += f"**Abstract**: *{clean_summary}*\n\n"
+    md_content += template["abstract"].format(abstract=clean_summary) + "\n\n"
     
     if other_papers:
-        md_content += "---\n\n## 📚 Other Papers Today\n\n"
+        md_content += template["other_papers"] + "\n\n"
         for item in other_papers:
             p = item['paper']
             a = item['analysis']
             md_content += f"### [{p.title}]({p.entry_id})\n"
-            md_content += f"- **Category**: `{a.get('category', 'N/A')}` | **Novelty**: `{a.get('novelty', 'N/A')}/5`\n"
-            md_content += f"- **Contribution**: {a.get('contribution', 'N/A')}\n\n"
+            md_content += template["other_paper_category"].format(category=a.get('category', 'N/A'), novelty=a.get('novelty', 'N/A')) + "\n"
+            md_content += template["contribution"].format(contribution=a.get('contribution', 'N/A')) + "\n\n"
             
     return md_content
 
 def main():
     """主执行函数"""
+    parser = argparse.ArgumentParser(description="Fetch and analyze recent LLM papers from arXiv.")
+    parser.add_argument("--provider", type=str, default="deepseek", choices=["google", "openai", "deepseek"], help="The LLM provider to use.")
+    parser.add_argument("--max-results", type=int, default=20, help="Maximum number of papers to process.")
+    parser.add_argument("-d", "--days", type=int, default=2, help="Number of days back to search for papers.")
+    parser.add_argument("--lang", type=str, default="zh", choices=["en", "zh"], help="Language for the output report (en/zh).")
+    
+    # API Keys - prioritize command-line args, then fall back to environment variables
+    parser.add_argument("--google-api-key", type=str, default=os.getenv("GOOGLE_API_KEY"), help="Google API Key.")
+    parser.add_argument("--openai-api-key", type=str, default=os.getenv("OPENAI_API_KEY"), help="OpenAI API Key.")
+    parser.add_argument("--deepseek-api-key", type=str, default=os.getenv("DEEPSEEK_API_KEY"), help="DeepSeek API Key.")
+
+    args = parser.parse_args()
+
+    # --- 配置 (Configuration) ---
+    # Computation and Language (cs.CL); Artificial Intelligence (cs.AI); Machine Learning (cs.LG)
+    SEARCH_QUERY = 'cat:cs.CL OR cat:cs.AI OR cat:cs.LG'
+    OUTPUT_DIR = "arxiv_digests_md"
+    MODEL_CONFIG = {
+        "google": "gemini-2.5-flash",
+        "openai": "gpt-5",
+        "deepseek": "deepseek-chat"
+    }
+
     client = None
-    model_name = MODEL_CONFIG[LLM_PROVIDER]
+    model_name = MODEL_CONFIG[args.provider]
 
-    print(f"Using LLM provider: {LLM_PROVIDER}")
-    if LLM_PROVIDER == 'google':
-        if not GOOGLE_API_KEY:
-            raise ValueError("GOOGLE_API_KEY environment variable not set.")
-        genai.configure(api_key=GOOGLE_API_KEY)
+    print(f"Using LLM provider: {args.provider}")
+    if args.provider == 'google':
+        if not args.google_api_key:
+            raise ValueError("Google API Key not provided. Set GOOGLE_API_KEY environment variable or use --google-api-key.")
+        genai.configure(api_key=args.google_api_key)
         client = genai.GenerativeModel(model_name)
-    elif LLM_PROVIDER == 'openai':
-        if not OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY environment variable not set.")
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
-    else:
-        raise ValueError(f"Unsupported LLM provider: {LLM_PROVIDER}")
+    
+    elif args.provider == 'openai':
+        if not args.openai_api_key:
+            raise ValueError("OpenAI API Key not provided. Set OPENAI_API_KEY environment variable or use --openai-api-key.")
+        client = openai.OpenAI(api_key=args.openai_api_key)
 
-    papers = fetch_recent_papers()
+    elif args.provider == 'deepseek':
+        if not args.deepseek_api_key:
+            raise ValueError("DeepSeek API Key not provided. Set DEEPSEEK_API_KEY environment variable or use --deepseek-api-key.")
+        client = openai.OpenAI(api_key=args.deepseek_api_key, base_url="https://api.deepseek.com/v1")
+
+    else:
+        raise ValueError(f"Unsupported LLM provider: {args.provider}")
+
+    papers = fetch_recent_papers(SEARCH_QUERY, args.max_results, args.days)
     if not papers:
         print("No new papers to process. Exiting.")
         return
 
     analyzed_papers = []
     for paper in papers:
-        analysis = analyze_paper(LLM_PROVIDER, client, model_name, paper)
+        analysis = analyze_paper(args.provider, client, model_name, paper, args.lang)
         if analysis:
             analyzed_papers.append({"paper": paper, "analysis": analysis})
     
-    report = generate_markdown_report(analyzed_papers)
+    report = generate_markdown_report(analyzed_papers, args.provider, args.lang)
 
-    # 创建输出目录（如果不存在）
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
     
-    # 生成带日期的文件名
     report_date = datetime.now().strftime("%Y-%m-%d")
     output_filename = os.path.join(OUTPUT_DIR, f"digest_{report_date}.md")
 
@@ -182,10 +245,10 @@ def main():
         f.write(report)
         
     print(f"\n✅ Digest report generated successfully: {output_filename}")
+    
     if analyzed_papers:
         print("\n--- Today's Recommendation ---")
-        # 提取报告的推荐部分进行打印
-        recommendation_part = report.split("## 📚 Other Papers Today")[0]
+        recommendation_part = report.split("---")[0]
         print(recommendation_part)
 
 if __name__ == "__main__":
