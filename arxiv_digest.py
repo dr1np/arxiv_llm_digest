@@ -59,9 +59,7 @@ REPORT_TEMPLATES = {
         "novelty_score": "- **Novelty Score**: `{novelty}/5`",
         "contribution": "- **Contribution**: {contribution}",
         "abstract": "**Abstract**: *{abstract}*",
-        "other_papers": """---
-
-## 📚 Other Papers Today""",
+        "other_papers": "---\n\n## 📚 Other Papers Today",
         "other_paper_category": "- **Category**: `{category}` | **Novelty**: `{novelty}/5`",
         "no_papers_found": "# Daily arXiv LLM Digest\n\nNo new papers found today."
     },
@@ -74,11 +72,10 @@ REPORT_TEMPLATES = {
         "novelty_score": "- **新颖性评分**: `{novelty}/5`",
         "contribution": "- **核心贡献**: {contribution}",
         "abstract": "**摘要**: *{abstract}*",
-        "other_papers": """---
-
-## 📚 今日其他论文""",
+        "other_papers": "---\n\n## 📚 今日其他论文",
         "other_paper_category": "- **类别**: `{category}` | **新颖性**: `{novelty}/5`",
-        "no_papers_found": "# arXiv LLM 每日摘要\n\n今日未发现新论文."
+        "no_papers_found": "# arXiv LLM 每日摘要\n\n今日未发现新论文.",
+        "translation_template": "Translate the following English abstract into concise, academic Chinese:\n\n---\n\n{text}"
     }
 }
 
@@ -137,7 +134,28 @@ def analyze_paper(provider, client, model_name, paper, lang):
         print(f"    [!] Error analyzing paper: {e}")
         return None
 
-def generate_markdown_report(analyzed_papers, provider, lang):
+def _translate_text(text, provider, client, model_name):
+    """使用 LLM 将文本翻译成中文"""
+    print("  Translating top recommendation's abstract to Chinese...")
+    prompt = REPORT_TEMPLATES["zh"]["translation_template"].format(text=text)
+    try:
+        if provider == 'google':
+            response = client.generate_content(prompt)
+            return response.text
+        elif provider in ['openai', 'deepseek']:
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": "You are a helpful translation assistant, translating English to Chinese."},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            return response.choices[0].message.content
+    except Exception as e:
+        print(f"    [!] Error translating text: {e}")
+        return None
+
+def generate_markdown_report(analyzed_papers, provider, lang, client, model_name):
     """生成 Markdown 格式的报告"""
     template = REPORT_TEMPLATES[lang]
     if not analyzed_papers:
@@ -160,8 +178,15 @@ def generate_markdown_report(analyzed_papers, provider, lang):
     md_content += template["category"].format(category=a.get('category', 'N/A')) + "\n"
     md_content += template["novelty_score"].format(novelty=a.get('novelty', 'N/A')) + "\n"
     md_content += template["contribution"].format(contribution=a.get('contribution', 'N/A')) + "\n\n"
-    clean_summary = p.summary.replace('\n', ' ')
-    md_content += template["abstract"].format(abstract=clean_summary) + "\n\n"
+    
+    # 如果是中文报告，翻译最佳推荐的摘要
+    abstract_to_display = p.summary.replace('\n', ' ')
+    if lang == 'zh':
+        translated_abstract = _translate_text(p.summary, provider, client, model_name)
+        if translated_abstract:
+            abstract_to_display = translated_abstract.replace('\n', ' ')
+
+    md_content += template["abstract"].format(abstract=abstract_to_display) + "\n\n"
     
     if other_papers:
         md_content += template["other_papers"] + "\n\n"
@@ -233,7 +258,7 @@ def main():
         if analysis:
             analyzed_papers.append({"paper": paper, "analysis": analysis})
     
-    report = generate_markdown_report(analyzed_papers, args.provider, args.lang)
+    report = generate_markdown_report(analyzed_papers, args.provider, args.lang, client, model_name)
 
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)

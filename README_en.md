@@ -4,7 +4,7 @@ This project automates the process of fetching, analyzing, and summarizing the l
 
 ## Features
 
-- **Daily Paper Fetching**: Automatically searches arXiv for papers submitted in the last 24 hours based on a configurable query.
+- **Daily Paper Fetching**: Automatically searches arXiv for papers submitted in the last 48 hours based on a configurable query.
 - **LLM-Powered Analysis**: For each paper, it uses an LLM to:
     - **Categorize** it into a predefined academic topic.
     - **Summarize** its core contribution in a single sentence.
@@ -77,7 +77,7 @@ Replace `OPENAI_API_KEY` with `GOOGLE_API_KEY` or `DEEPSEEK_API_KEY` as needed.
 Simply execute the script without any arguments.
 
 ```bash
-python3 arxiv_digest.py
+python arxiv_digest.py
 ```
 
 By default, this command will automatically:
