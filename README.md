@@ -108,3 +108,31 @@ python arxiv_digest.py
 ```bash
 python3 arxiv_digest.py --provider google --lang en --days 1 --max-results 10
 ```
+
+---
+## 高级配置
+
+### 自定义模型
+
+您可以轻松更改脚本使用的默认模型。
+
+1.  打开 `arxiv_digest.py` 文件。
+2.  找到名为 `MODEL_CONFIG` 的字典。
+
+    ```python
+    MODEL_CONFIG = {
+        "google": "gemini-2.5-flash",
+        "openai": "gpt-5",
+        "deepseek": "deepseek-chat"
+    }
+    ```
+3.  将引号内的模型名称修改为您想使用的任何兼容模型。例如，如果您想使用 OpenAI 的 `gpt-4o` 模型，只需修改：
+
+    ```python
+    MODEL_CONFIG = {
+        "google": "gemini-2.5-flash",
+        "openai": "gpt-4o",  # <-- 修改这里
+        "deepseek": "deepseek-chat"
+    }
+    ```
+4.  保存文件即可。下次当您通过 `--provider openai` 运行时，脚本将使用您指定的新模型。

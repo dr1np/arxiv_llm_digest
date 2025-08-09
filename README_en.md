@@ -108,3 +108,31 @@ For more control, you can use the following optional arguments:
 ```bash
 python3 arxiv_digest.py --provider google --lang en --days 1 --max-results 10
 ```
+
+---
+## Advanced Configuration
+
+### Customizing Models
+
+You can easily change the default models used by the script.
+
+1.  Open the `arxiv_digest.py` file.
+2.  Locate the `MODEL_CONFIG` dictionary.
+
+    ```python
+    MODEL_CONFIG = {
+        "google": "gemini-2.5-flash",
+        "openai": "gpt-5",
+        "deepseek": "deepseek-chat"
+    }
+    ```
+3.  Change the model name string to any compatible model you wish to use. For example, to use OpenAI's `gpt-4o` model, simply modify the line:
+
+    ```python
+    MODEL_CONFIG = {
+        "google": "gemini-2.5-flash",
+        "openai": "gpt-4o",  # <-- Change this
+        "deepseek": "deepseek-chat"
+    }
+    ```
+4.  Save the file. The next time you run with `--provider openai`, the script will use your new model.
