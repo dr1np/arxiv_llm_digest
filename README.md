@@ -2,12 +2,12 @@
 
 该项目自动从 arXiv 获取并分析近期与大型语言模型（LLM）相关的论文，生成每日 Markdown 摘要。
 
-注意：此分支/版本已简化为只支持一个 LLM 提供商（DeepSeek），并统一使用 OpenAI 兼容的 API 调用方式。
+注意：此分支/版本已简化为只支持OpenAI标准LLM API，统一使用 OpenAI 兼容的 API 调用方式。
 
 ## 主要特性
 
 - 从 arXiv 根据可配置查询检索近期论文
-- 使用 DeepSeek（OpenAI 兼容接口）对每篇论文做分类、贡献总结与新颖性评分
+- 使用 LLM API 对每篇论文做分类、贡献总结与新颖性评分
 - 输出可选中文/英文报告，结果保存在 `arxiv_digests_md/` 目录下
 - 配置集中在 `config.json`（或 `config.example.json`）中，可通过命令行参数覆盖
 

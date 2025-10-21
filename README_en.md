@@ -2,7 +2,7 @@
 
 This project automatically fetches and analyzes recent papers related to Large Language Models (LLMs) from arXiv, generating daily Markdown summaries.
 
-Note: This branch/version has been simplified to support only one LLM provider (DeepSeek) and uses OpenAI-compatible API calls uniformly.
+Note: This branch/version has been simplified to only support the standard OpenAI LLM API, using OpenAI-compatible API calls uniformly.
 
 ## Key Features
 
