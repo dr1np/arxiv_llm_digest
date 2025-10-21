@@ -1,4 +1,4 @@
-# ArXiv LLM 论文摘要（DeepSeek 版本）
+# ArXiv LLM 论文摘要
 
 该项目自动从 arXiv 获取并分析近期与大型语言模型（LLM）相关的论文，生成每日 Markdown 摘要。
 
@@ -72,10 +72,10 @@ digest_{YYYY-MM-DD}_{keywords}.md
 
 其中 `keywords` 来源于 `search_query`（会进行简单清理以便文件名安全）。
 
-## 迁移说明（从多提供商到 DeepSeek）
+## 迁移说明（从多提供商到标准OpenAI API）
 
 - 移除对 `google-generativeai` 的依赖
-- 统一使用 `openai.OpenAI(api_key=..., base_url=...)` 调用 DeepSeek
+- 统一使用 `openai.OpenAI(api_key=..., base_url=...)` 调用 DeepSeek或其他API供应商的API
 - 配置文件简化为单一 `model` 和 `api_base_url`
 
 ## 调试与验证
@@ -99,4 +99,4 @@ python -c "import json; json.load(open('config.json'))"
 
 ---
 
-更多细节请查看 `MIGRATION.md`、`REFACTOR_SUMMARY.md` 与 `config.example.json`。
+更多细节请查看 `config.example.json`。
