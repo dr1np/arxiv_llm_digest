@@ -1,0 +1,1 @@
+python arxiv_digest.py --api-key "sk-xxxx" --config config.example.json

@@ -1,4 +1,3 @@
 arxiv
-google-generativeai
 openai
 python-dotenv

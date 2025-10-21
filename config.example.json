@@ -1,0 +1,48 @@
+{
+  "search_query": "cat:cs.CL OR cat:cs.AI OR cat:cs.LG",
+  "output_dir": "arxiv_digests_md",
+  "max_results": 20,
+  "days": 2,
+  "lang": "zh",
+  "model": "deepseek-chat",
+  "api_base_url": "https://api.deepseek.com/v1",
+  "prompts": {
+    "en": {
+      "system_message": "You are a helpful research assistant providing JSON output.",
+      "template": "You are a senior AI researcher specializing in Large Language Models.\nBased on the title and abstract of the following paper, please perform these tasks:\n\n**Paper Title:** {title}\n**Paper Abstract:** {abstract}\n\n**Tasks:**\n1.  **Categorize** the paper into ONE of the following categories: \n    [Model Architecture, Training & Optimization, Data & Pre-training, Fine-tuning & Adaptation, Evaluation & Benchmarking, Multimodality, Applications, Safety & Ethics, Theory & Analysis, Other].\n2.  **Summarize the main contribution** in a single, concise sentence.\n3.  **Rate its potential novelty** on a scale of 1 to 5 (1=Incremental, 3=Interesting, 5=Potential Breakthrough).\n\nProvide your response in a valid JSON format, like this:\n{{\"category\": \"...\", \"contribution\": \"...\", \"novelty\": ...}}"
+    },
+    "zh": {
+      "system_message": "你是一个乐于助人的研究助理，需提供 JSON 格式的输出。",
+      "template": "你是一位专攻大型语言模型的高级AI研究员。\n根据以下论文的标题和摘要，请完成以下任务：\n\n**论文标题:** {title}\n**论文摘要:** {abstract}\n\n**任务:**\n1.  **分类**: 将论文归入以下类别之一：\n    [模型架构, 训练与优化, 数据与预训练, 微调与适配, 评测与基准, 多模态, 应用, 安全与伦理, 理论与分析, 其他]。\n2.  **总结核心贡献**: 用一个简洁的句子总结论文的核心贡献。\n3.  **评定新颖性**: 在1到5的范围内评价其潜在新颖性 (1=微创新, 3=有趣, 5=潜在突破)。\n\n请以有效的JSON格式提供您的回答，例如：\n{{\"category\": \"...\", \"contribution\": \"...\", \"novelty\": ...}}"
+    }
+  },
+  "report_templates": {
+    "en": {
+      "title": "# Daily arXiv LLM Digest - {report_date}",
+      "summary_by": "Your daily summary of new papers on LLMs, analyzed by **DeepSeek**.",
+      "top_recommendation": "## 🔥 Today's Top Recommendation",
+      "authors": "- **Authors**: {authors}",
+      "category": "- **Category**: `{category}`",
+      "novelty_score": "- **Novelty Score**: `{novelty}/5`",
+      "contribution": "- **Contribution**: {contribution}",
+      "abstract": "**Abstract**: *{abstract}*",
+      "other_papers": "---\n\n## 📚 Other Papers Today",
+      "other_paper_category": "- **Category**: `{category}` | **Novelty**: `{novelty}/5`",
+      "no_papers_found": "# Daily arXiv LLM Digest\n\nNo new papers found today."
+    },
+    "zh": {
+      "title": "# arXiv LLM 每日摘要 - {report_date}",
+      "summary_by": "您的 LLM 论文每日摘要，由 **DeepSeek** 分析。",
+      "top_recommendation": "## 🔥 今日最佳推荐",
+      "authors": "- **作者**: {authors}",
+      "category": "- **类别**: `{category}`",
+      "novelty_score": "- **新颖性评分**: `{novelty}/5`",
+      "contribution": "- **核心贡献**: {contribution}",
+      "abstract": "**摘要**: *{abstract}*",
+      "other_papers": "---\n\n## 📚 今日其他论文",
+      "other_paper_category": "- **类别**: `{category}` | **新颖性**: `{novelty}/5`",
+      "no_papers_found": "# arXiv LLM 每日摘要\n\n今日未发现新论文.",
+      "translation_template": "Translate the following English abstract into concise, academic Chinese:\n\n---\n\n{text}"
+    }
+  }
+}

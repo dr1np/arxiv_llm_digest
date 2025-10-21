@@ -1,83 +1,59 @@
 import os
 import json
 import argparse
+import re
 import arxiv
-import google.generativeai as genai
 import openai
 from datetime import datetime, timedelta, timezone
 
-# --- 语言和模板配置 (Language & Template Configuration) ---
 
-PROMPTS = {
-    "en": {
-        "system_message": "You are a helpful research assistant providing JSON output.",
-        "template": """
-You are a senior AI researcher specializing in Large Language Models.
-Based on the title and abstract of the following paper, please perform these tasks:
+# --- 配置加载函数 (Configuration Loading) ---
 
-**Paper Title:** {title}
-**Paper Abstract:** {abstract}
+def load_config(config_file="config.json"):
+    """加载配置文件"""
+    try:
+        with open(config_file, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        print(f"✓ Configuration loaded from {config_file}")
+        return config
+    except FileNotFoundError:
+        print(f"⚠ Configuration file {config_file} not found. Using command-line arguments only.")
+        return {}
+    except json.JSONDecodeError as e:
+        print(f"✗ Error parsing configuration file: {e}")
+        return {}
 
-**Tasks:**
-1.  **Categorize** the paper into ONE of the following categories: 
-    [Model Architecture, Training & Optimization, Data & Pre-training, Fine-tuning & Adaptation, Evaluation & Benchmarking, Multimodality, Applications, Safety & Ethics, Theory & Analysis, Other].
-2.  **Summarize the main contribution** in a single, concise sentence.
-3.  **Rate its potential novelty** on a scale of 1 to 5 (1=Incremental, 3=Interesting, 5=Potential Breakthrough).
-
-Provide your response in a valid JSON format, like this:
-{{"category": "...", "contribution": "...", "novelty": ...}}
-"""
-    },
-    "zh": {
-        "system_message": "你是一个乐于助人的研究助理，需提供 JSON 格式的输出。",
-        "template": """
-你是一位专攻大型语言模型的高级AI研究员。
-根据以下论文的标题和摘要，请完成以下任务：
-
-**论文标题:** {title}
-**论文摘要:** {abstract}
-
-**任务:**
-1.  **分类**: 将论文归入以下类别之一：
-    [模型架构, 训练与优化, 数据与预训练, 微调与适配, 评测与基准, 多模态, 应用, 安全与伦理, 理论与分析, 其他]。
-2.  **总结核心贡献**: 用一个简洁的句子总结论文的核心贡献。
-3.  **评定新颖性**: 在1到5的范围内评价其潜在新颖性 (1=微创新, 3=有趣, 5=潜在突破)。
-
-请以有效的JSON格式提供您的回答，例如：
-{{"category": "...", "contribution": "...", "novelty": ...}}
-"""
-    }
-}
-
-REPORT_TEMPLATES = {
-    "en": {
-        "title": "# Daily arXiv LLM Digest - {report_date}",
-        "summary_by": "Your daily summary of new papers on LLMs, analyzed by **{provider}**.",
-        "top_recommendation": "## 🔥 Today's Top Recommendation",
-        "authors": "- **Authors**: {authors}",
-        "category": "- **Category**: `{category}`",
-        "novelty_score": "- **Novelty Score**: `{novelty}/5`",
-        "contribution": "- **Contribution**: {contribution}",
-        "abstract": "**Abstract**: *{abstract}*",
-        "other_papers": "---\n\n## 📚 Other Papers Today",
-        "other_paper_category": "- **Category**: `{category}` | **Novelty**: `{novelty}/5`",
-        "no_papers_found": "# Daily arXiv LLM Digest\n\nNo new papers found today."
-    },
-    "zh": {
-        "title": "# arXiv LLM 每日摘要 - {report_date}",
-        "summary_by": "您的 LLM 论文每日摘要，由 **{provider}** 分析。",
-        "top_recommendation": "## 🔥 今日最佳推荐",
-        "authors": "- **作者**: {authors}",
-        "category": "- **类别**: `{category}`",
-        "novelty_score": "- **新颖性评分**: `{novelty}/5`",
-        "contribution": "- **核心贡献**: {contribution}",
-        "abstract": "**摘要**: *{abstract}*",
-        "other_papers": "---\n\n## 📚 今日其他论文",
-        "other_paper_category": "- **类别**: `{category}` | **新颖性**: `{novelty}/5`",
-        "no_papers_found": "# arXiv LLM 每日摘要\n\n今日未发现新论文.",
-        "translation_template": "Translate the following English abstract into concise, academic Chinese:\n\n---\n\n{text}"
-    }
-}
+def extract_keywords_from_query(search_query):
+    """从搜索查询中提取关键词用于文件名"""
+    # 替换逻辑操作符为下划线
+    cleaned = search_query.replace(" AND ", "_").replace(" OR ", "_").replace(" NOT ", "_")
+    
+    # 移除括号
+    cleaned = cleaned.replace("(", "").replace(")", "")
+    
+    # 移除 arXiv 分类前缀和冒号
+    cleaned = re.sub(r'cat:\s*[a-zA-Z.]+', '', cleaned)
+    cleaned = re.sub(r'(all|ti|abs|au):', '', cleaned)
+    
+    # 移除双引号
+    cleaned = cleaned.replace('"', '')
+    
+    # 移除多余空格
+    cleaned = re.sub(r'\s+', '_', cleaned.strip())
+    
+    # 移除多余下划线
+    cleaned = re.sub(r'_+', '_', cleaned)
+    
+    # 移除首尾下划线
+    cleaned = cleaned.strip('_')
+    
+    # 如果为空或太长，返回默认值
+    if not cleaned:
+        cleaned = "arxiv"
+    elif len(cleaned) > 50:
+        cleaned = cleaned[:50].rstrip('_')
+    
+    return cleaned
 
 
 # --- 核心功能 (Core Functions) ---
@@ -101,17 +77,10 @@ def fetch_recent_papers(search_query, max_results, days):
     print(f"Found {len(recent_papers)} new papers from the last {days} day(s).")
     return recent_papers
 
-def _analyze_with_google(model, paper, lang):
-    """使用 Google Gemini 分析论文"""
-    prompt = PROMPTS[lang]["template"].format(title=paper.title, abstract=paper.summary)
-    response = model.generate_content(prompt)
-    cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
-    return json.loads(cleaned_response)
-
-def _analyze_with_openai_compatible(client, model_name, paper, lang):
-    """使用 OpenAI 兼容的 API (OpenAI, DeepSeek) 分析论文"""
-    prompt = PROMPTS[lang]["template"].format(title=paper.title, abstract=paper.summary)
-    system_message = PROMPTS[lang]["system_message"]
+def _analyze_with_llm(client, model_name, paper, lang, prompts):
+    """使用 OpenAI 规范的 API 分析论文"""
+    prompt = prompts[lang]["template"].format(title=paper.title, abstract=paper.summary)
+    system_message = prompts[lang]["system_message"]
     response = client.chat.completions.create(
         model=model_name,
         messages=[
@@ -122,42 +91,35 @@ def _analyze_with_openai_compatible(client, model_name, paper, lang):
     )
     return json.loads(response.choices[0].message.content)
 
-def analyze_paper(provider, client, model_name, paper, lang):
-    """根据提供商选择分析函数"""
-    print(f"  Analyzing with {provider}: {paper.title[:60]}...")
+def analyze_paper(client, model_name, paper, lang, prompts):
+    """分析论文"""
+    print(f"  Analyzing: {paper.title[:60]}...")
     try:
-        if provider == 'google':
-            return _analyze_with_google(client, paper, lang)
-        elif provider in ['openai', 'deepseek']:
-            return _analyze_with_openai_compatible(client, model_name, paper, lang)
+        return _analyze_with_llm(client, model_name, paper, lang, prompts)
     except Exception as e:
         print(f"    [!] Error analyzing paper: {e}")
         return None
 
-def _translate_text(text, provider, client, model_name):
+def _translate_text(text, client, model_name, report_templates):
     """使用 LLM 将文本翻译成中文"""
     print("  Translating top recommendation's abstract to Chinese...")
-    prompt = REPORT_TEMPLATES["zh"]["translation_template"].format(text=text)
+    prompt = report_templates["zh"]["translation_template"].format(text=text)
     try:
-        if provider == 'google':
-            response = client.generate_content(prompt)
-            return response.text
-        elif provider in ['openai', 'deepseek']:
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {"role": "system", "content": "You are a helpful translation assistant, translating English to Chinese."},
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            return response.choices[0].message.content
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": "You are a helpful translation assistant, translating English to Chinese."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response.choices[0].message.content
     except Exception as e:
         print(f"    [!] Error translating text: {e}")
         return None
 
-def generate_markdown_report(analyzed_papers, provider, lang, client, model_name):
+def generate_markdown_report(analyzed_papers, lang, client, model_name, report_templates):
     """生成 Markdown 格式的报告"""
-    template = REPORT_TEMPLATES[lang]
+    template = report_templates[lang]
     if not analyzed_papers:
         return template["no_papers_found"]
 
@@ -168,7 +130,7 @@ def generate_markdown_report(analyzed_papers, provider, lang, client, model_name
     
     report_date = datetime.now().strftime("%Y-%m-%d")
     md_content = template["title"].format(report_date=report_date) + "\n\n"
-    md_content += template["summary_by"].format(provider=provider) + "\n\n"
+    md_content += template["summary_by"] + "\n\n"
     
     md_content += template["top_recommendation"] + "\n\n"
     p = recommendation['paper']
@@ -182,7 +144,7 @@ def generate_markdown_report(analyzed_papers, provider, lang, client, model_name
     # 如果是中文报告，翻译最佳推荐的摘要
     abstract_to_display = p.summary.replace('\n', ' ')
     if lang == 'zh':
-        translated_abstract = _translate_text(p.summary, provider, client, model_name)
+        translated_abstract = _translate_text(p.summary, client, model_name, report_templates)
         if translated_abstract:
             abstract_to_display = translated_abstract.replace('\n', ' ')
 
@@ -201,70 +163,67 @@ def generate_markdown_report(analyzed_papers, provider, lang, client, model_name
 
 def main():
     """主执行函数"""
-    parser = argparse.ArgumentParser(description="Fetch and analyze recent LLM papers from arXiv.")
-    parser.add_argument("--provider", type=str, default="deepseek", choices=["google", "openai", "deepseek"], help="The LLM provider to use.")
-    parser.add_argument("--max-results", type=int, default=20, help="Maximum number of papers to process.")
-    parser.add_argument("-d", "--days", type=int, default=2, help="Number of days back to search for papers.")
-    parser.add_argument("--lang", type=str, default="zh", choices=["en", "zh"], help="Language for the output report (en/zh).")
-    
-    # API Keys - prioritize command-line args, then fall back to environment variables
-    parser.add_argument("--google-api-key", type=str, default=os.getenv("GOOGLE_API_KEY"), help="Google API Key.")
-    parser.add_argument("--openai-api-key", type=str, default=os.getenv("OPENAI_API_KEY"), help="OpenAI API Key.")
-    parser.add_argument("--deepseek-api-key", type=str, default=os.getenv("DEEPSEEK_API_KEY"), help="DeepSeek API Key.")
+    parser = argparse.ArgumentParser(description="Fetch and analyze recent LLM papers from arXiv using DeepSeek.")
+    parser.add_argument("--config", type=str, default="config.json", help="Path to configuration file.")
+    parser.add_argument("--max-results", type=int, default=None, help="Maximum number of papers to process.")
+    parser.add_argument("-d", "--days", type=int, default=None, help="Number of days back to search for papers.")
+    parser.add_argument("--lang", type=str, default=None, choices=["en", "zh"], help="Language for the output report (en/zh).")
+    parser.add_argument("--api-key", type=str, default=os.getenv("DEEPSEEK_API_KEY"), help="DeepSeek API Key.")
 
     args = parser.parse_args()
 
     # --- 配置 (Configuration) ---
-    # Computation and Language (cs.CL); Artificial Intelligence (cs.AI); Machine Learning (cs.LG)
-    SEARCH_QUERY = 'cat:cs.CL OR cat:cs.AI OR cat:cs.LG'
-    OUTPUT_DIR = "arxiv_digests_md"
-    MODEL_CONFIG = {
-        "google": "gemini-2.5-flash",
-        "openai": "gpt-5",
-        "deepseek": "deepseek-chat"
-    }
-
-    client = None
-    model_name = MODEL_CONFIG[args.provider]
-
-    print(f"Using LLM provider: {args.provider}")
-    if args.provider == 'google':
-        if not args.google_api_key:
-            raise ValueError("Google API Key not provided. Set GOOGLE_API_KEY environment variable or use --google-api-key.")
-        genai.configure(api_key=args.google_api_key)
-        client = genai.GenerativeModel(model_name)
+    # Load configuration from file
+    config = load_config(args.config)
     
-    elif args.provider == 'openai':
-        if not args.openai_api_key:
-            raise ValueError("OpenAI API Key not provided. Set OPENAI_API_KEY environment variable or use --openai-api-key.")
-        client = openai.OpenAI(api_key=args.openai_api_key)
+    # Use command-line arguments to override config file settings
+    search_query = config.get("search_query", "cat:cs.CL OR cat:cs.AI OR cat:cs.LG")
+    output_dir = config.get("output_dir", "arxiv_digests_md")
+    max_results = args.max_results if args.max_results is not None else config.get("max_results", 20)
+    days = args.days if args.days is not None else config.get("days", 2)
+    lang = args.lang if args.lang is not None else config.get("lang", "zh")
+    model_name = config.get("model", "deepseek-chat")
+    api_base_url = config.get("api_base_url", "https://api.deepseek.com/v1")
+    
+    # Load prompts and templates from config
+    prompts = config.get("prompts", {})
+    report_templates = config.get("report_templates", {})
+    
+    if not prompts or not report_templates:
+        print("⚠ Prompts or report templates not found in config file. Please update your configuration.")
+        return
 
-    elif args.provider == 'deepseek':
-        if not args.deepseek_api_key:
-            raise ValueError("DeepSeek API Key not provided. Set DEEPSEEK_API_KEY environment variable or use --deepseek-api-key.")
-        client = openai.OpenAI(api_key=args.deepseek_api_key, base_url="https://api.deepseek.com/v1")
+    if not args.api_key:
+        raise ValueError("DeepSeek API Key not provided. Set DEEPSEEK_API_KEY environment variable or use --api-key.")
+    
+    # Initialize OpenAI-compatible client for DeepSeek
+    client = openai.OpenAI(api_key=args.api_key, base_url=api_base_url)
 
-    else:
-        raise ValueError(f"Unsupported LLM provider: {args.provider}")
+    print(f"✓ Using model: {model_name}")
+    print(f"✓ API base URL: {api_base_url}")
 
-    papers = fetch_recent_papers(SEARCH_QUERY, args.max_results, args.days)
+    papers = fetch_recent_papers(search_query, max_results, days)
     if not papers:
         print("No new papers to process. Exiting.")
         return
 
     analyzed_papers = []
     for paper in papers:
-        analysis = analyze_paper(args.provider, client, model_name, paper, args.lang)
+        analysis = analyze_paper(client, model_name, paper, lang, prompts)
         if analysis:
             analyzed_papers.append({"paper": paper, "analysis": analysis})
     
-    report = generate_markdown_report(analyzed_papers, args.provider, args.lang, client, model_name)
+    report = generate_markdown_report(analyzed_papers, lang, client, model_name, report_templates)
 
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
     
+    # 生成包含日期和关键词的文件名
     report_date = datetime.now().strftime("%Y-%m-%d")
-    output_filename = os.path.join(OUTPUT_DIR, f"digest_{report_date}.md")
+    keywords = extract_keywords_from_query(search_query)
+    
+    # 文件名格式: digest_YYYY-MM-DD_keywords.md
+    output_filename = os.path.join(output_dir, f"digest_{report_date}_{keywords}.md")
 
     with open(output_filename, "w", encoding="utf-8") as f:
         f.write(report)
