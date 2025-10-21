@@ -22,7 +22,7 @@ pip install -r requirements_arxiv.txt
 2. Configure API Key (example, bash):
 
 ```bash
-export DEEPSEEK_API_KEY="sk-..."
+export ARXIV_DIGEST_API_KEY="xx-xxxx"
 ```
 
 3. Run with default configuration:

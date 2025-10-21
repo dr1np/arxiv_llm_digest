@@ -168,7 +168,7 @@ def main():
     parser.add_argument("--max-results", type=int, default=None, help="Maximum number of papers to process.")
     parser.add_argument("-d", "--days", type=int, default=None, help="Number of days back to search for papers.")
     parser.add_argument("--lang", type=str, default=None, choices=["en", "zh"], help="Language for the output report (en/zh).")
-    parser.add_argument("--api-key", type=str, default=os.getenv("DEEPSEEK_API_KEY"), help="DeepSeek API Key.")
+    parser.add_argument("--api-key", type=str, default=os.getenv("ARXIV_DIGEST_API_KEY"), help="LLM API Key.")
 
     args = parser.parse_args()
 
